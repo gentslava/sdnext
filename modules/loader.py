@@ -18,6 +18,11 @@ np = None
 try:
     import numpy as np # pylint: disable=W0611,C0411
     import numpy.random # pylint: disable=W0611,C0411 # this causes failure if numpy version changed
+    def dummy_npwarn_decorator_factory():
+        def npwarn_decorator(x):
+            return x
+        return npwarn_decorator
+    np._no_nep50_warning = getattr(np, '_no_nep50_warning', dummy_npwarn_decorator_factory)
     def obj2sctype(obj):
         return np.dtype(obj).type
     if np.__version__.startswith('2.'): # monkeypatch for np==1.2 compatibility
