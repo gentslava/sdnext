@@ -12,8 +12,7 @@ from modules.onnx_impl import preprocess_pipeline as preprocess_onnx_pipeline, c
 from modules.lora import lora_common
 
 
-debug = shared.log.trace if os.environ.get('SD_DIFFUSERS_DEBUG', None) is not None else lambda *args, **kwargs: None
-debug('Trace: DIFFUSERS')
+debug = os.environ.get('SD_DIFFUSERS_DEBUG', None) is not None
 last_p = None
 orig_pipeline = shared.sd_model
 
@@ -136,6 +135,8 @@ def process_base(p: processing.StableDiffusionProcessing):
     if shared.opts.scheduler_eta is not None and shared.opts.scheduler_eta > 0 and shared.opts.scheduler_eta < 1:
         p.extra_generation_params["Sampler Eta"] = shared.opts.scheduler_eta
     output = None
+    if debug:
+        modelstats.analyze()
     try:
         t0 = time.time()
         extra_networks.activate(p, exclude=['text_encoder', 'text_encoder_2', 'text_encoder_3'])
@@ -451,8 +452,15 @@ def update_pipeline(sd_model, p: processing.StableDiffusionProcessing):
 
 
 def validate_pipeline(p: processing.StableDiffusionProcessing):
-    is_video_model = ('video' in shared.sd_model_type.lower()) or ('video' in shared.sd_model.__class__.__name__.lower())
-    is_video_pipeline = 'video' in p.__class__.__name__.lower()
+    from modules.video_models.models_def import models as video_models
+    models_cls = []
+    for family in video_models:
+        for m in video_models[family]:
+            if m.repo_cls is not None:
+                models_cls.append(m.repo_cls.__name__)
+    is_video_model = shared.sd_model.__class__.__name__ in models_cls
+    override_video_pipelines = ['WanPipeline']
+    is_video_pipeline = ('video' in p.__class__.__name__.lower()) or (shared.sd_model.__class__.__name__ in override_video_pipelines)
     if is_video_model and not is_video_pipeline:
         shared.log.error(f'Mismatch: type={shared.sd_model_type} cls={shared.sd_model.__class__.__name__} request={p.__class__.__name__} video model with non-video pipeline')
         return False
@@ -464,7 +472,8 @@ def validate_pipeline(p: processing.StableDiffusionProcessing):
 
 def process_diffusers(p: processing.StableDiffusionProcessing):
     results = []
-    debug(f'Process diffusers args: {vars(p)}')
+    if debug:
+        shared.log.trace(f'Process diffusers args: {vars(p)}')
     if not validate_pipeline(p):
         return results
 

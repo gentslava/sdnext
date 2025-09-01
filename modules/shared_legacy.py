@@ -9,8 +9,9 @@ class LegacyOption(OptionInfo):
         super().__init__(*args, **kwargs)
 
 
-legacy_options = options_section((None, "Legacy options"), {
-    "interrogate_clip_skip_categories": LegacyOption(["artists", "movements", "flavors"], "CLiP: skip categories", gr.CheckboxGroup, lambda: {"choices": []}, visible=False),
+legacy_options = options_section(('legacy_options', "Legacy options"), {
+    "ldsr_models_path": LegacyOption(os.path.join(paths.models_path, 'LDSR'), "LDSR Path", gr.Textbox, { "visible": False}),
+    "interrogate_clip_skip_categories": LegacyOption(["artists", "movements", "flavors"], "CLiP: skip categories", gr.CheckboxGroup, {"choices": [], "visible":False}),
     "lora_legacy": LegacyOption(False, "LoRA load using legacy method", gr.Checkbox, {"visible": False}),
     "lora_preferred_name": LegacyOption("filename", "LoRA preferred name", gr.Radio, {"choices": ["filename", "alias"], "visible": False}),
     "img2img_extra_noise": LegacyOption(0.0, "Extra noise multiplier for img2img", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01, "visible": False}),
@@ -35,7 +36,6 @@ legacy_options = options_section((None, "Legacy options"), {
     "dataset_filename_join_string": LegacyOption(" ", "Filename join string", gr.Textbox, { "visible": False }),
     "dataset_filename_word_regex": LegacyOption("", "Filename word regex", gr.Textbox, { "visible": False }),
     "diffusers_force_zeros": LegacyOption(False, "Force zeros for prompts when empty", gr.Checkbox, {"visible": False}),
-    "disable_all_extensions": LegacyOption("none", "Disable all extensions (preserves the list of disabled extensions)", gr.Radio, {"choices": ["none", "user", "all"]}),
     "disable_nan_check": LegacyOption(True, "Disable NaN check", gr.Checkbox, {"visible": False}),
     "embeddings_templates_dir": LegacyOption("", "Embeddings train templates directory", gr.Textbox, { "visible": False }),
     "extra_networks_card_fit": LegacyOption("cover", "UI image contain method", gr.Radio, {"choices": ["contain", "cover", "fill"], "visible": False}),

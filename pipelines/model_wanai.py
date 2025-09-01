@@ -41,6 +41,7 @@ def load_transformer(repo_id, diffusers_load_config={}, subfolder='transformer')
 
 def load_text_encoder(repo_id, diffusers_load_config={}):
     load_args, quant_args = model_quant.get_dit_args(diffusers_load_config, module='TE', device_map=True)
+    repo_id = 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers' if 'Wan2.' in repo_id else repo_id # always use shared umt5
     shared.log.debug(f'Load model: type=WanAI te="{repo_id}" quant="{model_quant.get_quant_type(quant_args)}" args={load_args}')
     text_encoder = transformers.UMT5EncoderModel.from_pretrained(
         repo_id,
@@ -59,13 +60,13 @@ def load_wan(checkpoint_info, diffusers_load_config={}):
     sd_models.hf_auth_check(checkpoint_info)
 
     if 'a14b' in repo_id.lower():
-        if shared.opts.model_wan_stage == 'first':
+        if shared.opts.model_wan_stage == 'high noise':
             transformer = load_transformer(repo_id, diffusers_load_config, 'transformer')
             transformer_2 = None
-        elif shared.opts.model_wan_stage == 'second':
+        elif shared.opts.model_wan_stage == 'low noise':
             transformer = load_transformer(repo_id, diffusers_load_config, 'transformer_2')
             transformer_2 = None
-        elif shared.opts.model_wan_stage == 'both':
+        elif shared.opts.model_wan_stage == 'combined':
             transformer = load_transformer(repo_id, diffusers_load_config, 'transformer')
             transformer_2 = load_transformer(repo_id, diffusers_load_config, 'transformer_2')
         else:

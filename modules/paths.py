@@ -4,7 +4,7 @@ import sys
 import json
 import shlex
 import argparse
-from modules.errors import log
+from installer import log
 
 
 # parse args, parse again after we have the data-dir and early-read the config file
@@ -42,23 +42,6 @@ paths = {}
 
 if os.environ.get('SD_PATH_DEBUG', None) is not None:
     log.debug(f'Paths: script-path="{script_path}" data-dir="{data_path}" models-dir="{models_path}" config="{config_path}"')
-
-
-def register_paths():
-    log.debug('Register paths')
-    sys.path.insert(0, script_path)
-    # sd_path = os.path.join(script_path, 'repositories')
-    path_dirs = [
-        # (os.path.join(sd_path, 'codeformer'), 'inference_codeformer.py', 'CodeFormer', []),
-    ]
-    for d, must_exist, what, _options in path_dirs:
-        must_exist_path = os.path.abspath(os.path.join(script_path, d, must_exist))
-        if not os.path.exists(must_exist_path):
-            log.error(f'Required path not found: path={must_exist_path} item={what}')
-        else:
-            d = os.path.abspath(d)
-            sys.path.append(d)
-            paths[what] = d
 
 
 def create_path(folder):
@@ -103,6 +86,7 @@ def create_paths(opts):
     create_path(fix_path('temp_dir'))
     create_path(fix_path('ckpt_dir'))
     create_path(fix_path('diffusers_dir'))
+    create_path(fix_path('hfcache_dir'))
     create_path(fix_path('vae_dir'))
     create_path(fix_path('unet_dir'))
     create_path(fix_path('te_dir'))

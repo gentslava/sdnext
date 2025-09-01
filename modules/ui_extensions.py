@@ -11,6 +11,7 @@ from modules import extensions, shared, paths, errors, ui_symbols, call_queue
 debug = shared.log.debug if os.environ.get('SD_EXT_DEBUG', None) is not None else lambda *args, **kwargs: None
 extensions_index = "https://vladmandic.github.io/sd-data/pages/extensions.json"
 hide_tags = ["localization"]
+exclude_extensions = ['sdnext-modernui']
 extensions_list = []
 sort_ordering = {
     "default": (True, lambda x: x.get('sort_default', '')),
@@ -65,7 +66,8 @@ def list_extensions():
             "created": ext.ctime,
             "updated": ext.mtime,
         }
-        extensions_list.append(entry)
+        if ext.name not in exclude_extensions:
+            extensions_list.append(entry)
         debug(f'Extension installed without index: {entry}')
 
 
@@ -279,6 +281,7 @@ def search_extensions(search_text, sort_column):
 def create_html(search_text, sort_column):
     # shared.log.debug(f'Extensions manager: refresh list search="{search_text}" sort="{sort_column}"')
     code = """
+        <div id="extensions-div">
         <table id="extensions">
             <colgroup>
                 <col style="width: 1%; background: var(--table-border-color)">
@@ -421,7 +424,7 @@ def create_html(search_text, sort_column):
                 <td>{version_code}</td>
                 <td>{install_code}</td>
             </tr>"""
-    code += "</tbody></table>"
+    code += "</tbody></table></div>"
     shared.log.debug(f'Extension list: processed={stats["processed"]} installed={stats["installed"]} enabled={stats["enabled"]} disabled={stats["installed"] - stats["enabled"]} visible={stats["processed"] - stats["hidden"]} hidden={stats["hidden"]}')
     return code
 
@@ -438,9 +441,10 @@ def create_ui():
                 uninstall_extension_button = gr.Button(elem_id="uninstall_extension_button", visible=False)
                 update_extension_button = gr.Button(elem_id="update_extension_button", visible=False)
                 with gr.Column(scale=4):
-                    search_text = gr.Textbox(label="Search")
-                with gr.Column(scale=1):
-                    sort_column = gr.Dropdown(value="default", label="Sort by", choices=list(sort_ordering.keys()), multiselect=False)
+                    with gr.Row():
+                        search_text = gr.Textbox(label="Search")
+                    with gr.Row():
+                        sort_column = gr.Dropdown(value="default", label="Sort by", choices=list(sort_ordering.keys()), multiselect=False)
                 with gr.Column(scale=1):
                     refresh_extensions_button = gr.Button(value="Refresh extension list", variant="primary")
                     check = gr.Button(value="Update all installed", variant="primary")

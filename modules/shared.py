@@ -24,6 +24,11 @@ import modules.paths as paths
 from installer import log, print_dict, console, get_version # pylint: disable=unused-import
 
 
+class Backend(Enum):
+    ORIGINAL = 1
+    DIFFUSERS = 2
+
+
 errors.install([gr])
 demo: gr.Blocks = None
 api = None
@@ -57,15 +62,10 @@ restricted_opts = {
     "outdir_init_images"
 }
 resize_modes = ["None", "Fixed", "Crop", "Fill", "Outpaint", "Context aware"]
-max_workers = 8
-default_hfcache_dir = os.environ.get("SD_HFCACHEDIR", None) or os.path.join(os.path.expanduser('~'), '.cache', 'huggingface', 'hub')
+max_workers = 12
 sdnq_quant_modes = ["int8", "float8_e4m3fn", "int7", "int6", "int5", "uint4", "uint3", "uint2", "float8_e5m2", "float8_e4m3fnuz", "float8_e5m2fnuz", "uint8", "uint7", "uint6", "uint5", "int4", "int3", "int2", "uint1"]
+default_hfcache_dir = os.environ.get("SD_HFCACHEDIR", None) or os.path.join(paths.models_path, 'huggingface')
 state = shared_state.State()
-
-
-class Backend(Enum):
-    ORIGINAL = 1
-    DIFFUSERS = 2
 
 
 # early select backend
@@ -89,6 +89,8 @@ devices.device = devices.get_optimal_device()
 mem_stat = memory_stats()
 cpu_memory = round(mem_stat['ram']['total'] if "ram" in mem_stat else 0)
 gpu_memory = round(mem_stat['gpu']['total'] if "gpu" in mem_stat else 0)
+if gpu_memory == 0:
+    gpu_memory = cpu_memory
 native = backend == Backend.DIFFUSERS
 if not files_cache.do_cache_folders:
     log.warning('File cache disabled: ')
@@ -142,22 +144,23 @@ options_templates.update(options_section(('sd', "Model Loading"), {
 
     "advanced_sep": OptionInfo("<h2>Advanced Options</h2>", "", gr.HTML),
     "sd_checkpoint_autoload": OptionInfo(True, "Model auto-load on start"),
+    "sd_parallel_load": OptionInfo(True, "Model load using multiple threads"),
     "sd_checkpoint_autodownload": OptionInfo(True, "Model auto-download on demand"),
     "stream_load": OptionInfo(False, "Model load using streams", gr.Checkbox),
     "diffusers_to_gpu": OptionInfo(False, "Model load model direct to GPU"),
-    "diffusers_eval": OptionInfo(True, "Force model eval", gr.Checkbox, {"visible": True }),
+    "diffusers_eval": OptionInfo(False, "Force model eval", gr.Checkbox, {"visible": True }),
     "device_map": OptionInfo('default', "Model load device map", gr.Radio, {"choices": ['default', 'gpu', 'cpu'] }),
     "disable_accelerate": OptionInfo(False, "Disable accelerate", gr.Checkbox, {"visible": False }),
     "sd_checkpoint_cache": OptionInfo(0, "Cached models", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1, "visible": False }),
 }))
 
-options_templates.update(options_section(('model_options', "Models Options"), {
+options_templates.update(options_section(('model_options', "Model Options"), {
     "model_sd3_sep": OptionInfo("<h2>Stable Diffusion 3.x</h2>", "", gr.HTML),
     "model_sd3_disable_te5": OptionInfo(False, "Disable T5 text encoder"),
     "model_h1_sep": OptionInfo("<h2>HiDream</h2>", "", gr.HTML),
     "model_h1_llama_repo": OptionInfo("Default", "LLama repo", gr.Textbox),
     "model_wan_sep": OptionInfo("<h2>WanAI</h2>", "", gr.HTML),
-    "model_wan_stage": OptionInfo("first", "Processing stage", gr.Radio, {"choices": ['first', 'second', 'both'] }),
+    "model_wan_stage": OptionInfo("first", "Processing stage", gr.Radio, {"choices": ['high noise', 'low noise', 'combined'] }),
     "model_wan_boundary": OptionInfo(0.85, "Stage boundary ratio", gr.Slider, {"minimum": 0, "maximum": 1.0, "step": 0.05 }),
 }))
 
@@ -179,6 +182,8 @@ options_templates.update(options_section(("quantization", "Model Quantization"),
     "sdnq_quantize_mode": OptionInfo("auto", "Quantization mode", gr.Dropdown, {"choices": ["auto", "pre", "post"]}),
     "sdnq_quantize_weights_mode": OptionInfo("int8", "Quantization type", gr.Dropdown, {"choices": sdnq_quant_modes}),
     "sdnq_quantize_weights_mode_te": OptionInfo("Same as model", "Quantization type for Text Encoders", gr.Dropdown, {"choices": ['Same as model'] + sdnq_quant_modes}),
+    "sdnq_modules_to_not_convert": OptionInfo("", "Modules to not convert"),
+    "sdnq_modules_dtype_dict": OptionInfo("{}", "Modules dtype dict"),
     "sdnq_quantize_weights_group_size": OptionInfo(0, "Group size", gr.Slider, {"minimum": -1, "maximum": 4096, "step": 1}),
     "sdnq_quantize_conv_layers": OptionInfo(False, "Quantize convolutional layers", gr.Checkbox),
     "sdnq_dequantize_compile": OptionInfo(devices.has_triton(), "Dequantize using torch.compile", gr.Checkbox),
@@ -248,6 +253,7 @@ options_templates.update(options_section(('text_encoder', "Text Encoder"), {
     "diffusers_zeros_prompt_pad": OptionInfo(False, "Use zeros for prompt padding", gr.Checkbox),
     "te_hijack": OptionInfo(True, "Offload after prompt encode", gr.Checkbox),
     "te_optional_sep": OptionInfo("<h2>Optional</h2>", "", gr.HTML),
+    "te_shared_t5": OptionInfo(True, "T5: Use shared instance of text encoder"),
     "te_pooled_embeds": OptionInfo(False, "SDXL: Use weighted pooled embeds"),
     "te_complex_human_instruction": OptionInfo(True, "Sana: Use complex human instructions"),
     "te_use_mask": OptionInfo(True, "Lumina: Use mask in transformers"),
@@ -264,7 +270,7 @@ options_templates.update(options_section(('cuda', "Compute Settings"), {
     "diffusers_generator_device": OptionInfo("GPU", "Generator device", gr.Radio, {"choices": ["GPU", "CPU", "Unset"]}),
 
     "cross_attention_sep": OptionInfo("<h2>Cross Attention</h2>", "", gr.HTML),
-    "cross_attention_optimization": OptionInfo(startup_cross_attention, "Attention optimization method", gr.Radio, lambda: {"choices": shared_items.list_crossattention(native)}),
+    "cross_attention_optimization": OptionInfo(startup_cross_attention, "Attention optimization method", gr.Radio, lambda: {"choices": shared_items.list_crossattention()}),
     "sdp_options": OptionInfo(startup_sdp_options, "SDP options", gr.CheckboxGroup, {"choices": ['Flash attention', 'Memory attention', 'Math attention', 'Dynamic attention', 'CK Flash attention', 'Sage attention']}),
     "xformers_options": OptionInfo(['Flash attention'], "xFormers options", gr.CheckboxGroup, {"choices": ['Flash attention'] }),
     "dynamic_attention_slice_rate": OptionInfo(0.5, "Dynamic Attention slicing rate in GB", gr.Slider, {"minimum": 0.01, "maximum": max(gpu_memory,4), "step": 0.01}),
@@ -424,7 +430,6 @@ options_templates.update(options_section(('system-paths', "System Paths"), {
     "realesrgan_models_path": OptionInfo(os.path.join(paths.models_path, 'RealESRGAN'), "Folder with RealESRGAN models", folder=True),
     "scunet_models_path": OptionInfo(os.path.join(paths.models_path, 'SCUNet'), "Folder with SCUNet models", folder=True),
     "swinir_models_path": OptionInfo(os.path.join(paths.models_path, 'SwinIR'), "Folder with SwinIR models", folder=True),
-    "ldsr_models_path": OptionInfo(os.path.join(paths.models_path, 'LDSR'), "Folder with LDSR models", folder=True),
     "clip_models_path": OptionInfo(os.path.join(paths.models_path, 'CLIP'), "Folder with CLIP models", folder=True),
     "other_paths_sep_options": OptionInfo("<h2>Cache folders</h2>", "", gr.HTML),
     "clean_temp_dir_at_start": OptionInfo(True, "Cleanup temporary folder on startup"),
@@ -514,26 +519,44 @@ options_templates.update(options_section(('image-metadata', "Image Metadata"), {
 }))
 
 options_templates.update(options_section(('ui', "User Interface"), {
+    "themes_sep_ui": OptionInfo("<h2>Theme options</h2>", "", gr.HTML),
     "theme_type": OptionInfo("Standard", "Theme type", gr.Radio, {"choices": ["Modern", "Standard", "None"]}),
     "theme_style": OptionInfo("Auto", "Theme mode", gr.Radio, {"choices": ["Auto", "Dark", "Light"]}),
     "gradio_theme": OptionInfo("black-teal", "UI theme", gr.Dropdown, lambda: {"choices": theme.list_themes()}, refresh=theme.refresh_themes),
-    "ui_locale": OptionInfo("Auto", "UI locale", gr.Dropdown, lambda: {"choices": theme.list_locales()}),
-    "subpath": OptionInfo("", "Mount URL subpath"),
+
+    "quicksetting_sep_images": OptionInfo("<h2>Quicksettings</h2>", "", gr.HTML),
+    "quicksettings_list": OptionInfo(["sd_model_checkpoint"], "Quicksettings list", gr.Dropdown, lambda: {"multiselect":True, "choices": opts.list()}),
+
+    "server_sep_ui": OptionInfo("<h2>Startup & Server Options</h2>", "", gr.HTML),
     "autolaunch": OptionInfo(False, "Autolaunch browser upon startup"),
-    "font_size": OptionInfo(14, "Font size", gr.Slider, {"minimum": 8, "maximum": 32, "step": 1}),
-    "aspect_ratios": OptionInfo("1:1, 4:3, 3:2, 16:9, 16:10, 21:9, 2:3, 3:4, 9:16, 10:16, 9:21", "Allowed aspect ratios"),
-    "logmonitor_show": OptionInfo(True, "Show log view"),
-    "logmonitor_refresh_period": OptionInfo(5000, "Log view update period", gr.Slider, {"minimum": 0, "maximum": 30000, "step": 25}),
-    "ui_request_timeout": OptionInfo(30000, "UI request timeout", gr.Slider, {"minimum": 1000, "maximum": 120000, "step": 10}),
     "motd": OptionInfo(False, "Show MOTD"),
+    "subpath": OptionInfo("", "Mount URL subpath"),
+    "ui_request_timeout": OptionInfo(120000, "UI request timeout", gr.Slider, {"minimum": 1000, "maximum": 300000, "step": 10}),
+
+    "cards_sep_ui": OptionInfo("<h2>Card options</h2>", "", gr.HTML),
+    "extra_networks_card_size": OptionInfo(140, "UI card size (px)", gr.Slider, {"minimum": 20, "maximum": 2000, "step": 1}),
+    "extra_networks_card_cover": OptionInfo("sidebar", "UI position", gr.Radio, {"choices": ["cover", "inline", "sidebar"]}),
+    "extra_networks_card_square": OptionInfo(True, "UI disable variable aspect ratio"),
+
+    "other_sep_ui": OptionInfo("<h2>Other...</h2>", "", gr.HTML),
+    "ui_locale": OptionInfo("Auto", "UI locale", gr.Dropdown, lambda: {"choices": theme.list_locales()}),
+    "font_size": OptionInfo(14, "Font size", gr.Slider, {"minimum": 8, "maximum": 32, "step": 1}),
+    "gpu_monitor": OptionInfo(3000, "GPU monitor interval", gr.Slider, {"minimum": 100, "maximum": 60000, "step": 100}),
+    "aspect_ratios": OptionInfo("1:1, 4:3, 3:2, 16:9, 16:10, 21:9, 2:3, 3:4, 9:16, 10:16, 9:21", "Allowed aspect ratios"),
     "compact_view": OptionInfo(False, "Compact view"),
     "ui_columns": OptionInfo(4, "Gallery view columns", gr.Slider, {"minimum": 1, "maximum": 8, "step": 1}),
+
+    "images_sep_log": OptionInfo("<h2>Log Display</h2>", "", gr.HTML),
+    "logmonitor_show": OptionInfo(True, "Show log view"),
+    "logmonitor_refresh_period": OptionInfo(5000, "Log view update period", gr.Slider, {"minimum": 0, "maximum": 30000, "step": 25}),
+
+    "images_sep_ui": OptionInfo("<h2>Outputs & Images</h2>", "", gr.HTML),
     "return_grid": OptionInfo(True, "Show grid in results"),
     "return_mask": OptionInfo(False, "Inpainting include greyscale mask in results"),
     "return_mask_composite": OptionInfo(False, "Inpainting include masked composite in results"),
     "send_seed": OptionInfo(True, "Send seed when sending prompt or image to other interface", gr.Checkbox, {"visible": False}),
     "send_size": OptionInfo(False, "Send size when sending prompt or image to another interface", gr.Checkbox, {"visible": False}),
-    "quicksettings_list": OptionInfo(["sd_model_checkpoint"], "Quicksettings list", gr.Dropdown, lambda: {"multiselect":True, "choices": opts.list()}),
+
 }))
 
 options_templates.update(options_section(('live-preview', "Live Previews"), {
@@ -630,6 +653,8 @@ options_templates.update(options_section(('huggingface', "Huggingface"), {
     "huggingface_sep": OptionInfo("<h2>Huggingface</h2>", "", gr.HTML),
     "diffuser_cache_config": OptionInfo(True, "Use cached model config when available"),
     "huggingface_token": OptionInfo('', 'HuggingFace token', gr.Textbox, {"lines": 2}),
+    "hf_transfer_mode": OptionInfo("rust", "HuggingFace download method", gr.Radio, {"choices": ['requests', 'rust', 'xet']}),
+
     "diffusers_model_load_variant": OptionInfo("default", "Preferred Model variant", gr.Radio, {"choices": ['default', 'fp32', 'fp16']}),
     "diffusers_vae_load_variant": OptionInfo("default", "Preferred VAE variant", gr.Radio, {"choices": ['default', 'fp32', 'fp16']}),
     "custom_diffusers_pipeline": OptionInfo('', 'Load custom Diffusers pipeline'),
@@ -642,11 +667,8 @@ options_templates.update(options_section(('extra_networks', "Networks"), {
     "extra_networks": OptionInfo(["All"], "Available networks", gr.Dropdown, lambda: {"multiselect":True, "choices": ['All'] + [en.title for en in extra_networks]}),
     "extra_networks_sort": OptionInfo("Default", "Sort order", gr.Dropdown, {"choices": ['Default', 'Name [A-Z]', 'Name [Z-A]', 'Date [Newest]', 'Date [Oldest]', 'Size [Largest]', 'Size [Smallest]']}),
     "extra_networks_view": OptionInfo("gallery", "UI view", gr.Radio, {"choices": ["gallery", "list"]}),
-    "extra_networks_card_cover": OptionInfo("sidebar", "UI position", gr.Radio, {"choices": ["cover", "inline", "sidebar"]}),
-    "extra_networks_height": OptionInfo(0, "UI height (%)", gr.Slider, {"minimum": 0, "maximum": 100, "step": 1}), # set in ui_javascript
     "extra_networks_sidebar_width": OptionInfo(35, "UI sidebar width (%)", gr.Slider, {"minimum": 10, "maximum": 80, "step": 1}),
-    "extra_networks_card_size": OptionInfo(140, "UI card size (px)", gr.Slider, {"minimum": 20, "maximum": 2000, "step": 1}),
-    "extra_networks_card_square": OptionInfo(True, "UI disable variable aspect ratio"),
+    "extra_networks_height": OptionInfo(0, "UI height (%)", gr.Slider, {"minimum": 0, "maximum": 100, "step": 1}), # set in ui_javascript
     "extra_networks_fetch": OptionInfo(True, "UI fetch network info on mouse-over"),
     "extra_network_skip_indexing": OptionInfo(False, "Build info on first access", gr.Checkbox),
 
@@ -680,7 +702,12 @@ options_templates.update(options_section(('extra_networks', "Networks"), {
     "wildcards_enabled": OptionInfo(True, "Enable file wildcards support"),
 }))
 
-options_templates.update(options_section((None, "Hidden options"), {
+options_templates.update(options_section(('extensions', "Extensions"), {
+    "disable_all_extensions": OptionInfo("none", "Disable all extensions", gr.Radio, {"choices": ["none", "user", "all"]}),
+}))
+
+
+options_templates.update(options_section(('hidden_options', "Hidden options"), {
     # internal options
     "diffusers_version": OptionInfo("", "Diffusers version", gr.Textbox, {"visible": False}),
     "disabled_extensions": OptionInfo([], "Disable these extensions", gr.Textbox, {"visible": False}),

@@ -8,7 +8,7 @@ import numpy as np
 import cv2
 from PIL import Image
 from blendmodes.blend import blendLayers, BlendType
-from modules import shared, devices, images, sd_models, sd_samplers, sd_hijack_hypertile, processing_vae, timer
+from modules import shared, devices, images, sd_models, sd_samplers, sd_vae, sd_hijack_hypertile, processing_vae, timer
 
 
 debug = shared.log.trace if os.environ.get('SD_PROCESS_DEBUG', None) is not None else lambda *args, **kwargs: None
@@ -282,7 +282,8 @@ def resize_init_images(p):
     if getattr(p, 'image', None) is not None and getattr(p, 'init_images', None) is None:
         p.init_images = [p.image]
     if getattr(p, 'init_images', None) is not None and len(p.init_images) > 0:
-        tgt_width, tgt_height = 8 * math.ceil(p.init_images[0].width / 8), 8 * math.ceil(p.init_images[0].height / 8)
+        vae_scale_factor = sd_vae.get_vae_scale_factor()
+        tgt_width, tgt_height = vae_scale_factor * math.ceil(p.init_images[0].width / vae_scale_factor), vae_scale_factor * math.ceil(p.init_images[0].height / vae_scale_factor)
         if p.init_images[0].size != (tgt_width, tgt_height):
             shared.log.debug(f'Resizing init images: original={p.init_images[0].width}x{p.init_images[0].height} target={tgt_width}x{tgt_height}')
             p.init_images = [images.resize_image(1, image, tgt_width, tgt_height, upscaler_name=None) for image in p.init_images]
@@ -364,7 +365,7 @@ def calculate_base_steps(p, use_denoise_start, use_refiner_start):
     if len(getattr(p, 'timesteps', [])) > 0:
         return None
     cls = shared.sd_model.__class__.__name__
-    if 'Flex' in cls or 'HiDreamImageEditingPipeline' in cls or 'Kontext' in cls:
+    if 'Flex' in cls or 'Kontext' in cls or 'Edit' in cls:
         steps = p.steps
     elif not is_txt2img():
         if cls in sd_models.i2i_pipes:

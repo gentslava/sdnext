@@ -1,6 +1,7 @@
 # pylint: disable=redefined-builtin,no-member,protected-access
 
 from typing import Optional
+
 import torch
 
 from .common import dtype_dict
@@ -10,17 +11,22 @@ def pack_int_symetric(tensor: torch.CharTensor, weights_dtype: str) -> torch.Byt
     return packed_int_function_dict[weights_dtype]["pack"](tensor.sub_(dtype_dict[weights_dtype]["min"]).to(dtype=dtype_dict[weights_dtype]["storage_dtype"]))
 
 
-def unpack_int_symetric(packed_tensor: torch.ByteTensor, shape: torch.Size, weights_dtype: str, dtype: Optional[torch.dtype] = None, transpose: Optional[bool] = False) -> torch.CharTensor:
+def pack_int_asymetric(tensor: torch.CharTensor, weights_dtype: str) -> torch.ByteTensor:
+    return packed_int_function_dict[weights_dtype]["pack"](tensor.to(dtype=dtype_dict[weights_dtype]["storage_dtype"]))
+
+
+def unpack_int_symetric(packed_tensor: torch.ByteTensor, shape: torch.Size, weights_dtype: str, dtype: Optional[torch.dtype] = None) -> torch.CharTensor:
     if dtype is None:
         dtype = dtype_dict[weights_dtype]["torch_dtype"]
-    result = packed_int_function_dict[weights_dtype]["unpack"](packed_tensor, shape).to(dtype=dtype).add_(dtype_dict[weights_dtype]["min"])
-    if transpose:
-        result = result.transpose(0,1)
-    return result
+    return packed_int_function_dict[weights_dtype]["unpack"](packed_tensor, shape).to(dtype=dtype).add_(dtype_dict[weights_dtype]["min"])
+
+
+def unpack_int_asymetric(packed_tensor: torch.ByteTensor, shape: torch.Size, weights_dtype: str) -> torch.CharTensor:
+    return packed_int_function_dict[weights_dtype]["unpack"](packed_tensor, shape)
 
 
 def pack_uint7(tensor: torch.ByteTensor) -> torch.ByteTensor:
-    packed_tensor = tensor.contiguous().reshape(-1, 8)
+    packed_tensor = tensor.contiguous().view(-1, 8)
     packed_tensor = torch.stack(
         (
             torch.bitwise_or(packed_tensor[:, 0], torch.bitwise_and(torch.bitwise_left_shift(packed_tensor[:, 7], 1), 128)),
@@ -37,7 +43,7 @@ def pack_uint7(tensor: torch.ByteTensor) -> torch.ByteTensor:
 
 
 def pack_uint6(tensor: torch.ByteTensor) -> torch.ByteTensor:
-    packed_tensor = tensor.contiguous().reshape(-1, 4)
+    packed_tensor = tensor.contiguous().view(-1, 4)
     packed_tensor = torch.stack(
         (
             torch.bitwise_or(packed_tensor[:, 0], torch.bitwise_and(torch.bitwise_left_shift(packed_tensor[:, 3], 2), 192)),
@@ -50,7 +56,7 @@ def pack_uint6(tensor: torch.ByteTensor) -> torch.ByteTensor:
 
 
 def pack_uint5(tensor: torch.ByteTensor) -> torch.ByteTensor:
-    packed_tensor = tensor.contiguous().reshape(-1, 8)
+    packed_tensor = tensor.contiguous().view(-1, 8)
     packed_tensor = torch.stack(
         (
             torch.bitwise_or(packed_tensor[:, 0], torch.bitwise_left_shift(packed_tensor[:, 5], 5)),
@@ -77,13 +83,13 @@ def pack_uint5(tensor: torch.ByteTensor) -> torch.ByteTensor:
 
 
 def pack_uint4(tensor: torch.ByteTensor) -> torch.ByteTensor:
-    packed_tensor = tensor.contiguous().reshape(-1, 2)
+    packed_tensor = tensor.contiguous().view(-1, 2)
     packed_tensor = torch.bitwise_or(packed_tensor[:, 0], torch.bitwise_left_shift(packed_tensor[:, 1], 4))
     return packed_tensor
 
 
 def pack_uint3(tensor: torch.ByteTensor) -> torch.ByteTensor:
-    packed_tensor = tensor.contiguous().reshape(-1, 8)
+    packed_tensor = tensor.contiguous().view(-1, 8)
     packed_tensor = torch.stack(
         (
             torch.bitwise_or(
@@ -108,7 +114,7 @@ def pack_uint3(tensor: torch.ByteTensor) -> torch.ByteTensor:
 
 
 def pack_uint2(tensor: torch.ByteTensor) -> torch.ByteTensor:
-    packed_tensor = tensor.contiguous().reshape(-1, 4)
+    packed_tensor = tensor.contiguous().view(-1, 4)
     packed_tensor = torch.bitwise_or(
         torch.bitwise_or(packed_tensor[:, 0], torch.bitwise_left_shift(packed_tensor[:, 1], 2)),
         torch.bitwise_or(torch.bitwise_left_shift(packed_tensor[:, 2], 4), torch.bitwise_left_shift(packed_tensor[:, 3], 6)),
@@ -147,7 +153,7 @@ def unpack_uint7(packed_tensor: torch.ByteTensor, shape: torch.Size) -> torch.By
             )
         ),
         dim=-1
-    ).reshape(shape)
+    ).view(shape)
     return result
 
 
@@ -166,7 +172,7 @@ def unpack_uint6(packed_tensor: torch.ByteTensor, shape: torch.Size) -> torch.By
             )
         ),
         dim=-1
-    ).reshape(shape)
+    ).view(shape)
     return result
 
 
@@ -195,12 +201,12 @@ def unpack_uint5(packed_tensor: torch.ByteTensor, shape: torch.Size) -> torch.By
             ),
         ),
         dim=-1
-    ).reshape(shape)
+    ).view(shape)
     return result
 
 
 def unpack_uint4(packed_tensor: torch.ByteTensor, shape: torch.Size) -> torch.ByteTensor:
-    result = torch.stack((torch.bitwise_and(packed_tensor, 15), torch.bitwise_right_shift(packed_tensor, 4)), dim=-1).reshape(shape)
+    result = torch.stack((torch.bitwise_and(packed_tensor, 15), torch.bitwise_right_shift(packed_tensor, 4)), dim=-1).view(shape)
     return result
 
 
@@ -223,7 +229,7 @@ def unpack_uint3(packed_tensor: torch.ByteTensor, shape: torch.Size) -> torch.By
             ),
         ),
         dim=-1
-    ).reshape(shape)
+    ).view(shape)
     return result
 
 
@@ -236,7 +242,7 @@ def unpack_uint2(packed_tensor: torch.ByteTensor, shape: torch.Size) -> torch.By
             torch.bitwise_right_shift(packed_tensor, 6),
         ),
         dim=-1
-    ).reshape(shape)
+    ).view(shape)
     return result
 
 

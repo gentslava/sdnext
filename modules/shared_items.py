@@ -1,5 +1,4 @@
 import diffusers
-from modules.onnx_impl import initialize_onnx
 
 
 pipelines = {
@@ -42,9 +41,10 @@ pipelines = {
     'UniDiffuser': getattr(diffusers, 'UniDiffuserPipeline', None),
     'Amused': getattr(diffusers, 'AmusedPipeline', None),
     'HiDream': getattr(diffusers, 'HiDreamImagePipeline', None),
-    'OmniGenPipeline': getattr(diffusers, 'OmniGenPipeline', None),
+    'OmniGen': getattr(diffusers, 'OmniGenPipeline', None),
     'Cosmos': getattr(diffusers, 'Cosmos2TextToImagePipeline', None),
     'WanAI': getattr(diffusers, 'WanPipeline', None),
+    'Qwen': getattr(diffusers, 'QwenImagePipeline', None),
 
     # dynamically imported and redefined later
     'Meissonic': getattr(diffusers, 'DiffusionPipeline', None),
@@ -56,13 +56,20 @@ pipelines = {
     'Bria': getattr(diffusers, 'DiffusionPipeline', None),
 }
 
-initialize_onnx()
-onnx_pipelines = {
-    'ONNX Stable Diffusion': getattr(diffusers, 'OnnxStableDiffusionPipeline', None),
-    'ONNX Stable Diffusion Img2Img': getattr(diffusers, 'OnnxStableDiffusionImg2ImgPipeline', None),
-    'ONNX Stable Diffusion Inpaint': getattr(diffusers, 'OnnxStableDiffusionInpaintPipeline', None),
-    'ONNX Stable Diffusion Upscale': getattr(diffusers, 'OnnxStableDiffusionUpscalePipeline', None),
-}
+
+try:
+    from modules.onnx_impl import initialize_onnx
+    initialize_onnx()
+    onnx_pipelines = {
+        'ONNX Stable Diffusion': getattr(diffusers, 'OnnxStableDiffusionPipeline', None),
+        'ONNX Stable Diffusion Img2Img': getattr(diffusers, 'OnnxStableDiffusionImg2ImgPipeline', None),
+        'ONNX Stable Diffusion Inpaint': getattr(diffusers, 'OnnxStableDiffusionInpaintPipeline', None),
+        'ONNX Stable Diffusion Upscale': getattr(diffusers, 'OnnxStableDiffusionUpscalePipeline', None),
+    }
+except Exception as e:
+    from installer import log
+    log.error(f'ONNX initialization error: {e}')
+    onnx_pipelines = {}
 
 
 def postprocessing_scripts():
@@ -105,33 +112,22 @@ def refresh_te_list():
     modules.model_te.refresh_te_list()
 
 
-def list_crossattention(native:bool=True):
-    if native:
-        return [
-            "Disabled",
-            "Scaled-Dot-Product",
-            "xFormers",
-            "Batch matrix-matrix",
-            "Split attention",
-            "Dynamic Attention BMM"
-        ]
-    else:
-        return [
-            "Disabled",
-            "Scaled-Dot-Product",
-            "xFormers",
-            "Doggettx's",
-            "InvokeAI's",
-            "Sub-quadratic",
-            "Split attention"
-        ]
+def list_crossattention():
+    return [
+        "Disabled",
+        "Scaled-Dot-Product",
+        "xFormers",
+        "Batch matrix-matrix",
+        "Split attention",
+        "Dynamic Attention BMM"
+    ]
 
 def get_pipelines():
-    from installer import log
     if hasattr(diffusers, 'OnnxStableDiffusionPipeline') and 'ONNX Stable Diffusion' not in list(pipelines):
         pipelines.update(onnx_pipelines)
     for k, v in pipelines.items():
         if k != 'Autodetect' and v is None:
+            from installer import log # pylint: disable=redefined-outer-name
             log.error(f'Not available: pipeline={k} diffusers={diffusers.__version__} path={diffusers.__file__}')
     return pipelines
 

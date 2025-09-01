@@ -1,8 +1,5 @@
-import os
 import diffusers
-from modules import shared, devices, sd_models, model_quant
-
-debug = shared.log.trace if os.environ.get('SD_LOAD_DEBUG', None) is not None else lambda *args, **kwargs: None
+from modules import shared, devices, sd_models, model_quant, sd_hijack_te
 
 
 def load_omnigen(checkpoint_info, diffusers_load_config={}): # pylint: disable=unused-argument
@@ -28,5 +25,6 @@ def load_omnigen(checkpoint_info, diffusers_load_config={}): # pylint: disable=u
         **load_config,
     )
 
+    sd_hijack_te.init_hijack(pipe)
     devices.torch_gc(force=True, reason='load')
     return pipe
